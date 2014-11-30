@@ -25,9 +25,9 @@ Please see detail > [https://tools.ietf.org/html/rfc6749#section-4.3](https://to
 
 ## Testing source code
 
-You can run autotest as follows:
+You can run autotest as follows(require midje):
 
-    lein ring server
+    lein repl
     (require 'midje.repl) (midje.repl/autotest)
 
 ## Prerequisites
