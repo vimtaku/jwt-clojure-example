@@ -28,10 +28,10 @@
         ))
       (testing "test token expire"
         (stubbing [clj-time.core/now (t/date-time 2014 10 10 9 29 59 999)]
-          (is (= true (authfn (mock/request :get "/api/ticket") (get-expire-token))))
+          (is (map? (authfn (mock/request :get "/api/ticket") (get-expire-token))))
         )
         (stubbing [clj-time.core/now (t/date-time 2014 10 10 9 30 0 000)]
-          (is (= true (authfn (mock/request :get "/api/ticket") (get-expire-token))))
+          (is (map? (authfn (mock/request :get "/api/ticket") (get-expire-token))))
         )
         (stubbing [clj-time.core/now (t/date-time 2014 10 10 9 30 0 001)]
           (is

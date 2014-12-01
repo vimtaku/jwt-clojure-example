@@ -16,6 +16,32 @@
     [slingshot.slingshot :refer [throw+ try+]]
     ))
 
+
+(def memoize-verify-token (memo/fifo verify-jwt :fifo/threshold 10))
+
+(defn authfn [request token]
+  (def jwt (memoize-verify-token token))
+  (if-not (correct-iss? jwt) (throw+ {:type :token-invalid}))
+  (if (token-expired? jwt) (throw+ {:type :token-expired}))
+  (if (re-find #"/user/new" (:uri request))
+    ; /user/new endpoint require ticket
+    (if (jwt :ticket) jwt nil)
+    jwt
+    )
+  )
+
+(defn verify-jwt-by-request [request]
+  (let [backend (token-backend {:authfn authfn})
+        token (.parse backend request)]
+    (try+
+       ((.authenticate backend request token)  :identity)
+       (catch Exception e
+         (throw+ {:type :token-invalid})
+       )
+    )
+  ))
+
+
 (s/defschema User {
   :username String
   :email String
@@ -72,8 +98,16 @@
       ; User
       (GET* "/user/me" []
         :return User
+        :header-params [authorization :- String]
+
+
+        (def jwt (verify-jwt-by-request +compojure-api-request+))
+        (println (verify-jwt-by-request +compojure-api-request+))
+        (println (verify-jwt-by-request +compojure-api-request+))
+        (println (verify-jwt-by-request +compojure-api-request+))
+        (println (verify-jwt-by-request +compojure-api-request+))
         (def user (db/lookup-user-by-username
-          (-> +compojure-api-request+ :jwt :username)))
+          (-> jwt :username)))
         (if (nil? user)
           (not-found {:message "User does not found."})
           (ok user)
@@ -89,20 +123,6 @@
   (GET* "/" [] "Hello World")
   (route/not-found "Not Found"))
 
-(def memoize-verify-token (memo/fifo verify-jwt :fifo/threshold 10))
-
-(defn authfn [request token]
-  (def jwt (memoize-verify-token token))
-  (if-not (correct-iss? jwt) (throw+ {:type :token-invalid}))
-  (if (token-expired? jwt) (throw+ {:type :token-expired}))
-  (if (re-find #"/user/new" (:uri request))
-    ; /user/new endpoint require ticket
-    (if (jwt :ticket) true false)
-    ; else true
-    true
-    )
-  )
-
 (defn unauthorized-token-invalid [request token]
   (unauthorized {:message "Invalid token"})
   )
@@ -115,17 +135,6 @@
   (unauthorized-token-invalid)
   )
 
-(defn verify-jwt-by-request [request]
-  (let [backend (token-backend {:authfn authfn})
-        token (.parse backend request)]
-    (try+
-       ((.authenticate backend request token)  :identity)
-       (catch Exception e
-         (throw+ {:type :token-invalid})
-       )
-    )
-  )
-  )
 
 (defn should-be-authenticated [request]
   (if (get (System/getenv) "SWAGGER")
