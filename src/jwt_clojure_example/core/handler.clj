@@ -16,6 +16,28 @@
     [slingshot.slingshot :refer [throw+ try+]]
     ))
 
+
+(def memoize-verify-token (memo/fifo verify-jwt :fifo/threshold 10))
+
+(defn authfn [request token]
+  (def jwt (memoize-verify-token token))
+  (if-not (correct-iss? jwt) (throw+ {:type :token-invalid}))
+  (if (token-expired? jwt) (throw+ {:type :token-expired}))
+  jwt
+  )
+
+(defn verify-jwt-by-request [request]
+  (let [backend (token-backend {:authfn authfn})
+        token (.parse backend request)]
+    (try+
+       ((.authenticate backend request token)  :identity)
+       (catch Exception e
+         (throw+ {:type :token-invalid})
+       )
+    )
+  ))
+
+
 (s/defschema User {
   :username String
   :email String
@@ -43,8 +65,13 @@
         )
       (POST* "/user/new" {body :body-params}
         :return User
+        :header-params [authorization :- String]
         :body-params [username :- String, email :- String, password :- String]
         :summary "create user endpoint."
+
+        ; /user/new endpoint require ticket
+        (def jwt (verify-jwt-by-request +compojure-api-request+))
+        (if-not (jwt :ticket) (throw+ {:type :token-invalid}))
 
         (def res (db/create-user (body :username) (body :email) (body :password)))
         (if-not (nil? res)
@@ -60,7 +87,6 @@
 
         (if-not (= (body grant_type) "password")
           (bad-request {:message "invalid grant type"}))
-
         (def user (db/lookup-user (body :username) (body :password)))
         (if-not (nil? user)
           ;; This hash should include user_info only user_id
@@ -72,8 +98,10 @@
       ; User
       (GET* "/user/me" []
         :return User
-        (def user (db/lookup-user-by-username
-          (-> +compojure-api-request+ :jwt :username)))
+        :header-params [authorization :- String]
+
+        (def jwt (verify-jwt-by-request +compojure-api-request+))
+        (def user (db/lookup-user-by-username (jwt :username)))
         (if (nil? user)
           (not-found {:message "User does not found."})
           (ok user)
@@ -89,20 +117,6 @@
   (GET* "/" [] "Hello World")
   (route/not-found "Not Found"))
 
-(def memoize-verify-token (memo/fifo verify-jwt :fifo/threshold 10))
-
-(defn authfn [request token]
-  (def jwt (memoize-verify-token token))
-  (if-not (correct-iss? jwt) (throw+ {:type :token-invalid}))
-  (if (token-expired? jwt) (throw+ {:type :token-expired}))
-  (if (re-find #"/user/new" (:uri request))
-    ; /user/new endpoint require ticket
-    (if (jwt :ticket) true false)
-    ; else true
-    true
-    )
-  )
-
 (defn unauthorized-token-invalid [request token]
   (unauthorized {:message "Invalid token"})
   )
@@ -115,17 +129,6 @@
   (unauthorized-token-invalid)
   )
 
-(defn verify-jwt-by-request [request]
-  (let [backend (token-backend {:authfn authfn})
-        token (.parse backend request)]
-    (try+
-       ((.authenticate backend request token)  :identity)
-       (catch Exception e
-         (throw+ {:type :token-invalid})
-       )
-    )
-  )
-  )
 
 (defn should-be-authenticated [request]
   (if (get (System/getenv) "SWAGGER")
