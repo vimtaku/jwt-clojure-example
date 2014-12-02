@@ -18,6 +18,7 @@ Please see detail > [https://tools.ietf.org/html/rfc6749#section-4.3](https://to
  - get user info by token
 
 ## You may have to do
+ - /api/user/new may add jwt to token blacklist for expire it
  - fix database system for persistent.
  - If you want to use refresh_token, write logic about refresh token, save and verify it.
  - Change secret key pairs, secret words for encryption.
